@@ -4,6 +4,7 @@ import six
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 import torch
+from torch.autograd import Variable
 from torchtext.data import Field, Dataset, Example, Iterator, Batch
 import pandas as pd
 
@@ -102,21 +103,26 @@ def get_kaggle_sequential_data(batch_size=32, device=-1,
 
 
 class BoWBatch(Batch):
-    def __init__(self, vectorizer, vectorizer_field,
+    def __init__(self, vectorizer,
         data=None, dataset=None, device=None, train=True):
         """Create a Batch from a list of examples."""
         self.vectorizer = vectorizer
+        self.vectorizer_field = vectorizer._field
         if data is not None:
             self.batch_size = len(data)
             self.dataset = dataset
             self.train = train
             for (name, field) in dataset.fields.items():
                 if field is not None:
-                    if name == vectorizer_field:
-                        text_data = [' '.join(getattr(i, vectorizer_field))
+                    # TODO: maybe put this in Field
+                    if name == self.vectorizer_field:
+                        text_data = [
+                            ' '.join(getattr(i, self.vectorizer_field))
                             for i in data]
                         matrix = self.vectorizer.transform(text_data).toarray()
-                        setattr(self, name, matrix)
+                        arr = torch.FloatTensor(matrix)
+                        arr = Variable(arr, volatile=not train)
+                        setattr(self, name, arr)
                     else:
                         setattr(self, name, field.numericalize(
                             field.pad(x.__dict__[name] for x in data),
@@ -138,7 +144,7 @@ class BoWIterator(Iterator):
                 self.iterations += 1
                 self._iterations_this_epoch += 1
                 yield BoWBatch(
-                    self.vectorizer, 'essay',
+                    self.vectorizer,
                     minibatch, self.dataset, self.device,
                     self.train)
             if not self.repeat:
@@ -167,6 +173,7 @@ def get_kaggle_bow_data(batch_size=32, device=-1,
     vectorizer = TfidfVectorizer(
         max_features=max_size, min_df=min_freq)
     vectorizer.fit(train_df.essay)
+    vectorizer._field = 'essay'
 
     train_iter, valid_iter = BoWIterator.splits(
         (train_dataset, valid_dataset), vectorizer,
@@ -176,15 +183,15 @@ def get_kaggle_bow_data(batch_size=32, device=-1,
 
 
 if __name__ == '__main__':
-    vocabs, iters = get_kaggle_sequential_data()
-    vocab = vocabs[0]
-    train_iter, valid_iter = iters
-    for batch in train_iter:
-        print(batch)
-        break
+    # vocabs, iters = get_kaggle_sequential_data()
+    # vocab = vocabs[0]
+    # train_iter, valid_iter = iters
+    # for batch in train_iter:
+    #     print(batch.essay)
+    #     break
 
     vocabs, iters = get_kaggle_bow_data()
     train_iter, valid_iter = iters
     for batch in train_iter:
-        print(batch)
+        print(batch.essay)
         break
