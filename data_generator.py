@@ -4,7 +4,7 @@ import six
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 import torch
-from torchtext.data import Field, Dataset, Example, Iterator
+from torchtext.data import Field, Dataset, Example, Iterator, Batch
 import pandas as pd
 
 TRAIN_PATH = 'data/training_set_rel3.tsv'
@@ -101,18 +101,89 @@ def get_kaggle_sequential_data(batch_size=32, device=-1,
     return (TEXT_FIELD, ), (train_iter, valid_iter)
 
 
+class BoWBatch(Batch):
+    def __init__(self, vectorizer, vectorizer_field,
+        data=None, dataset=None, device=None, train=True):
+        """Create a Batch from a list of examples."""
+        self.vectorizer = vectorizer
+        if data is not None:
+            self.batch_size = len(data)
+            self.dataset = dataset
+            self.train = train
+            for (name, field) in dataset.fields.items():
+                if field is not None:
+                    if name == vectorizer_field:
+                        text_data = [' '.join(getattr(i, vectorizer_field))
+                            for i in data]
+                        matrix = self.vectorizer.transform(text_data).toarray()
+                        setattr(self, name, matrix)
+                    else:
+                        setattr(self, name, field.numericalize(
+                            field.pad(x.__dict__[name] for x in data),
+                            device=device, train=train))
+
+
+class BoWIterator(Iterator):
+    def __init__(self, dataset, vectorizer, batch_size, **kwargs):
+        self.vectorizer = vectorizer
+        super(BoWIterator, self).__init__(dataset, batch_size, **kwargs)
+
+    def __iter__(self):
+        while True:
+            self.init_epoch()
+            for idx, minibatch in enumerate(self.batches):
+                # fast-forward if loaded from state
+                if self._iterations_this_epoch > idx:
+                    continue
+                self.iterations += 1
+                self._iterations_this_epoch += 1
+                yield BoWBatch(
+                    self.vectorizer, 'essay',
+                    minibatch, self.dataset, self.device,
+                    self.train)
+            if not self.repeat:
+                raise StopIteration
+
+    @classmethod
+    def splits(cls, datasets, vectorizer, batch_sizes=None, **kwargs):
+        if batch_sizes is None:
+            batch_sizes = [kwargs.pop('batch_size')] * len(datasets)
+        ret = []
+        for i in range(len(datasets)):
+            train = i == 0
+            ret.append(cls(
+                datasets[i], vectorizer,
+                batch_size=batch_sizes[i], train=train, **kwargs))
+        return tuple(ret)
+
+
 def get_kaggle_bow_data(batch_size=32, device=-1,
     max_size=50000, min_freq=3):
     train_df, valid_df = build_data()
 
-    vectorizer = TfidfVectorizer(max_features=max_size, min_df=min_freq)
-    train_matrix = vectorizer.fit_transform(train_df.essay)
-    valid_matrix = vectorizer.transform(valid_df.essay)
+    train_dataset = PandasDataset(train_df, FIELDS)
+    valid_dataset = PandasDataset(valid_df, FIELDS)
+
+    vectorizer = TfidfVectorizer(
+        max_features=max_size, min_df=min_freq)
+    vectorizer.fit(train_df.essay)
+
+    train_iter, valid_iter = BoWIterator.splits(
+        (train_dataset, valid_dataset), vectorizer,
+        batch_size=batch_size, device=device)
+
+    return (vectorizer, ), (train_iter, valid_iter)
 
 
 if __name__ == '__main__':
     vocabs, iters = get_kaggle_sequential_data()
     vocab = vocabs[0]
+    train_iter, valid_iter = iters
+    for batch in train_iter:
+        print(batch)
+        break
+
+    vocabs, iters = get_kaggle_bow_data()
     train_iter, valid_iter = iters
     for batch in train_iter:
         print(batch)
