@@ -7,15 +7,26 @@ import torch.optim as O
 import torch.nn as nn
 
 from utils import makedirs
-from data_generator import get_kaggle_sequential_data
-from model import SequenceClassifier
+from data_generator import get_kaggle_sequential_data, get_kaggle_bow_data
+from model import SequenceClassifier, BoWClassifier
+
+MODEL_COLLECTION = {
+    'sequence': SequenceClassifier,
+    'bow': BoWClassifier,
+}
 
 
 def train(config, *args, **kwargs):
 
-    vocabs, iters = get_kaggle_sequential_data(
-        batch_size=config.batch_size, device=config.gpu,
-        max_size=config.max_size, min_freq=config.min_freq)
+    if config.model_type == 'sequence':
+        vocabs, iters = get_kaggle_sequential_data(
+            batch_size=config.batch_size, device=config.gpu,
+            max_size=config.max_size, min_freq=config.min_freq)
+    elif config.model_type == 'bow':
+        vocabs, iters = get_kaggle_bow_data(
+            batch_size=config.batch_size, device=config.gpu,
+            max_size=config.max_size, min_freq=config.min_freq)
+
     vocab = vocabs[0]
     train_iter, valid_iter = iters
 
@@ -27,7 +38,8 @@ def train(config, *args, **kwargs):
     if config.birnn:
         config.n_cells *= 2
 
-    model = SequenceClassifier(config)
+    set_model = MODEL_COLLECTION[config.model_type]
+    model = set_model(config)
 
     criterion = nn.MSELoss()
     opt = O.Adam(model.parameters(), lr=config.lr)
