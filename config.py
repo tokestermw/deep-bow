@@ -5,6 +5,7 @@ import click
 
 
 class DefaultConfig(object):
+    model_type = 'sequence'
     log_every = 10
     epochs = 10
     batch_size = 128
@@ -30,6 +31,7 @@ class DefaultConfig(object):
     resume_snapshot = ''
     max_size = 50000
     min_freq = 3
+    d_out = 1
 
 
 class SmallConfig(DefaultConfig):
@@ -66,6 +68,8 @@ def train_template(f):
         ignore_unknown_options=True,
         allow_extra_args=True,
     ))
+    @click.option('--model-type',
+        type=click.Choice(['sequence', 'bow']))
     @click.option('--epochs', type=int)
     @click.option('--batch_size', type=int)
     @click.option('--d_embed', type=int)
@@ -90,6 +94,7 @@ def train_template(f):
     @click.option('--resume_snapshot', type=click.STRING)
     @click.option('--max-size', type=int)
     @click.option('--min-freq', type=int)
+    @click.option('--d-out', type=int)
     @override_context
     @click.pass_obj
     def train(config, *args, **kwargs):
