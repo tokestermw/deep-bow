@@ -174,6 +174,7 @@ def get_kaggle_bow_data(batch_size=32, device=-1,
         max_features=max_size, min_df=min_freq)
     vectorizer.fit(train_df.essay)
     vectorizer._field = 'essay'
+    vectorizer.vocab = vectorizer.vocabulary_
 
     train_iter, valid_iter = BoWIterator.splits(
         (train_dataset, valid_dataset), vectorizer,
@@ -183,15 +184,17 @@ def get_kaggle_bow_data(batch_size=32, device=-1,
 
 
 if __name__ == '__main__':
-    # vocabs, iters = get_kaggle_sequential_data()
-    # vocab = vocabs[0]
-    # train_iter, valid_iter = iters
-    # for batch in train_iter:
-    #     print(batch.essay)
-    #     break
+    vocabs, iters = get_kaggle_sequential_data()
+    vocab = vocabs[0]
+    train_iter, valid_iter = iters
+    for batch in train_iter:
+        print(batch.essay)
+        print(batch.size())
+        break
 
     vocabs, iters = get_kaggle_bow_data()
     train_iter, valid_iter = iters
     for batch in train_iter:
         print(batch.essay)
+        print(batch.size())
         break
