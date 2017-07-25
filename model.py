@@ -19,10 +19,10 @@ class Linear(Bottle, nn.Linear):
     pass
 
 
-class Encoder(nn.Module):
+class SequenceEncoder(nn.Module):
 
     def __init__(self, config):
-        super(Encoder, self).__init__()
+        super(SequenceEncoder, self).__init__()
         self.config = config
         input_size = config.d_proj if config.projection else config.d_embed
         self.rnn = nn.LSTM(input_size=input_size, hidden_size=config.d_hidden,
@@ -42,12 +42,14 @@ class Encoder(nn.Module):
 
 
 class SequenceClassifier(nn.Module):
+    
     def __init__(self, config):        
         super(SequenceClassifier, self).__init__()
         self.config = config
         self.embed = nn.Embedding(config.n_embed, config.d_embed)
-        self.projection = Linear(config.d_embed, config.d_proj)
-        self.encoder = Encoder(config)
+        if self.config.projection:
+            self.projection = Linear(config.d_embed, config.d_proj)
+        self.encoder = SequenceEncoder(config)
         self.dropout = nn.Dropout(p=config.dp_ratio)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -55,6 +57,7 @@ class SequenceClassifier(nn.Module):
         if self.config.birnn:
             seq_in_size *= 2
         lin_config = [seq_in_size]*2
+        # TODO: make this depth configurable
         self.output = nn.Sequential(
             Linear(*lin_config),
             self.relu,
@@ -79,11 +82,46 @@ class SequenceClassifier(nn.Module):
         return scores
 
 
+class BoWEncoder(nn.Module):
+
+    def __init__(self, config):
+        super(BoWEncoder, self).__init__()
+        self.config = config
+        input_size = config.max_size
+        self.projection = Linear(input_size, config.d_hidden)
+        self.relu = nn.ReLU()
+
+    def forward(self, inputs):
+        batch_size = inputs.size()[0]
+        out = self.projection(inputs)
+        out = self.relu(out)
+        return out
+
+
 class BoWClassifier(nn.Module):
     def __init__(self, config):
         super(BoWClassifier, self).__init__()
         self.config = config
+        self.encoder = BoWEncoder(config)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=config.dp_ratio)
+        self.sigmoid = nn.Sigmoid()
+        seq_in_size = config.d_hidden
+        lin_config = [seq_in_size]*2
+        self.output = nn.Sequential(
+            Linear(*lin_config),
+            self.relu,
+            self.dropout,
+            Linear(*lin_config),
+            self.relu,
+            self.dropout,
+            Linear(*lin_config),
+            self.relu,
+            self.dropout,
+            Linear(seq_in_size, config.d_out),
+            self.sigmoid)
 
-
-if __name__ == '__main__':
-    pass
+    def forward(self, batch):
+        essay_vector = self.encoder(batch.essay)
+        scores = self.output(essay_vector)
+        return scores
